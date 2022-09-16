@@ -1,0 +1,9 @@
+.vscode/*
+build/*
+build-intermediates/*
+**/.vs
+**/Debug/*
+**/x64/*
+**/*.o
+*.db
+.vs/*
