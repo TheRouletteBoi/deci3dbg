@@ -1,5 +1,4 @@
 .vscode/*
-build/*
 build-intermediates/*
 **/.vs
 **/Debug/*
