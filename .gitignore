@@ -6,3 +6,6 @@ build-intermediates/*
 **/*.o
 *.db
 .vs/*
+*.exp
+*.pdb
+*.lib
