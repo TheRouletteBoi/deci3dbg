@@ -1043,7 +1043,6 @@ static void ProcessTargetSpecificEvent(uint uDataLen, byte *pData)
 			ev.handled = true;
 			bpt.hea = dabr_addr;
 			bpt.kea = BADADDR;
-			ev.exc().ea = BADADDR;
 			
 			events.enqueue(ev, IN_BACK);
 		}
@@ -1083,13 +1082,26 @@ static void ProcessTargetSpecificEvent(uint uDataLen, byte *pData)
 
 			debug_printf("ThreadID = 0x%llX\n", bswap64(pDbgData->ppu_thread_create.uPPUThreadID));
 
-			ev.set_eid(THREAD_STARTED);
+			UINT32 ThreadInfoSize = 1024;
+			SNPS3_PPU_THREAD_INFO *ThreadInfo = (SNPS3_PPU_THREAD_INFO*)malloc(ThreadInfoSize);
+			SNRESULT snr;
+			if (SN_FAILED(snr = SNPS3ThreadInfo(TargetID, PS3_UI_CPU, ProcessID, bswap64(pDbgData->ppu_thread_create.uPPUThreadID), &ThreadInfoSize, (byte*)ThreadInfo)))
+			{
+				msg("SNPS3ThreadInfo Error: %d\n", snr);
+
+			}
+			
+			qstring& info = ev.set_info(THREAD_STARTED);
+			info.clear();
+			info += (const char*)(ThreadInfo + 1);
 			ev.pid     = ProcessID;
 			ev.tid     = bswap64(pDbgData->ppu_thread_create.uPPUThreadID);
 			ev.ea      = BADADDR;
 			ev.handled = true;
 
 			events.enqueue(ev, IN_BACK);
+
+			free((void*)ThreadInfo);
 
 		}
 		break;
@@ -1434,12 +1446,12 @@ int get_thread_state(uint32 tid)
 	return state;
 }
 
-void get_modules_info(void)
+void get_modules_info(meminfo_vec_t& areas)
 {
 	uint32 NumModules;
 	uint32 *ModuleIDs;
 	uint64 ModuleInfoSize = 1024;
-	SNPS3MODULEINFO *ModuleInfo;
+	SNPS3MODULEINFOEX *ModuleInfo;
 	SNRESULT snr = SN_S_OK;
 	debug_event_t ev;
 
@@ -1449,7 +1461,7 @@ void get_modules_info(void)
 
 	SNPS3GetModuleList(TargetID, ProcessID, &NumModules, ModuleIDs);
 
-	ModuleInfo = (SNPS3MODULEINFO *)malloc(ModuleInfoSize);
+	ModuleInfo = (SNPS3MODULEINFOEX*)malloc(ModuleInfoSize);
 
 	//debug_printf(" === MODULE INFO === \n");
 
@@ -1457,7 +1469,7 @@ void get_modules_info(void)
 
 		ModuleInfoSize = 1024;
 
-		if (SN_FAILED( snr = SNPS3GetModuleInfo(TargetID, ProcessID, ModuleIDs[i], &ModuleInfoSize, ModuleInfo)))
+		if (SN_FAILED( snr = SNPS3GetModuleInfoEx(TargetID, ProcessID, ModuleIDs[i], &ModuleInfoSize, ModuleInfo, NULL, NULL)))
 		{
 			msg("SNPS3GetModuleInfo Error: %d\n", snr);
 
@@ -1481,6 +1493,37 @@ void get_modules_info(void)
 				modinfo.base = ModuleInfo->Segments->uBase;
 				modinfo.size = ModuleInfo->Segments->uMemSize;
 				modinfo.rebase_to = BADADDR;
+
+#define FLAG_READ 0x04
+#define FLAG_WRITE 0x02
+#define FLAG_EXEC 0x01
+
+				for (int i = 0; i < ModuleInfo->Hdr.uNumSegments; i++) {
+					memory_info_t info;
+
+					info.start_ea = ModuleInfo->Segments[i].uBase;
+					info.end_ea = info.start_ea + ModuleInfo->Segments[i].uMemSize;
+					info.name = ModuleInfo->Hdr.aName;
+					info.name += "-" + i;
+					info.sclass = NULL;
+					info.sbase = 0;
+					info.bitness = 2;
+					info.perm = 0;
+					if (ModuleInfo->Segments[i].uFlags & FLAG_READ) {
+						info.perm |= SEGPERM_READ;
+					}
+					if (ModuleInfo->Segments[i].uFlags & FLAG_WRITE) {
+						info.perm |= SEGPERM_WRITE;
+					}
+					if (ModuleInfo->Segments[i].uFlags & FLAG_EXEC) {
+						info.perm |= SEGPERM_EXEC;
+					}
+						
+
+					areas.push_back(info);
+				}
+
+
 
 				events.enqueue(ev, IN_BACK);
 
@@ -1637,7 +1680,7 @@ drc_t deci3_attach_process(pid_t process_id,
 	modinfo.size = 0;
 	modinfo.rebase_to = BADADDR;
 
-	ev.pid = ProcessID;
+	ev.pid = process_id;
 	ev.tid = NO_THREAD;
 	ev.ea = BADADDR;
 	ev.handled = true;
@@ -1669,7 +1712,10 @@ drc_t deci3_attach_process(pid_t process_id,
 	events.enqueue(ev, IN_BACK);
 
 	get_threads_info();
-	get_modules_info();
+
+	meminfo_vec_t areas;
+	get_modules_info(areas);
+
 	clear_all_bp(-1);
 
 	modinfo_t& modinfo_pa = ev.set_modinfo(PROCESS_ATTACHED);
@@ -1721,8 +1767,21 @@ int idaapi prepare_to_pause_process(void)
 //--------------------------------------------------------------------------
 int idaapi deci3_exit_process(void)
 {
-	//SNPS3ProcessKill
-	//SNPS3TerminateGameProcess
+	SNRESULT snr;
+
+	msg("Terminating process...\n");
+	if (SN_FAILED(snr = SNPS3TerminateGameProcess(TargetID, ProcessID, 30))) {
+		msg("Failed to terminate processid %x Attempting kill...\n");
+		if (SN_FAILED(snr = SNPS3ProcessKill(TargetID, ProcessID))) {
+			msg("Failed to kill %x\n");
+		}
+		else {
+			msg("Killed!\n");
+		}
+	}
+	else {
+		msg("Teriminated!\n");
+	}
 
     debug_event_t ev;
     ev.pid     = ProcessID;
@@ -2101,12 +2160,21 @@ int do_step(uint32 tid, uint32 dbg_notification)
 
 //--------------------------------------------------------------------------
 // Run one instruction in the thread
-int idaapi thread_set_step(thid_t tid)
+int idaapi thread_set_step(thid_t tid, resume_mode_t resmod)
 {
 	int dbg_notification;
 	int result = 0;
 
-	dbg_notification = get_running_notification();
+	switch (resmod) {
+		case RESMOD_INTO:
+			dbg_notification = STEP_INTO;
+			break;
+		case RESMOD_OVER:
+			dbg_notification = STEP_OVER;
+			break;
+		default:
+			return result;
+	}
 
 	if (dbg_notification == STEP_INTO || dbg_notification == STEP_OVER) {
 		result = do_step(tid, dbg_notification);
@@ -2303,6 +2371,8 @@ int idaapi get_memory_info(meminfo_vec_t &areas)
 	info.perm = 0; // SEGPERM_EXEC / SEGPERM_WRITE / SEGPERM_READ
 	
 	areas.push_back(info);
+
+	get_modules_info(areas);
 
 	return 1;
 }
@@ -2793,6 +2863,31 @@ static ssize_t idaapi idd_notify(void* user_data, int msgid, va_list va)
 			retcode = update_bpts(bpts, nadd, ndel);
 			break;
 		}
+		case debugger_t::ev_thread_suspend: {
+			thid_t tid = va_argi(va, thid_t);
+			retcode = thread_suspend(tid);
+			break;
+		}
+		case debugger_t::ev_thread_continue: {
+			thid_t tid = va_argi(va, thid_t);
+			retcode = thread_continue(tid);
+			break;
+		}
+		case debugger_t::ev_set_resume_mode: {
+			thid_t tid = va_argi(va, thid_t);
+			resume_mode_t resmod = va_argi(va, resume_mode_t);
+			retcode = thread_set_step(tid, resmod);
+			break;
+		}
+		case debugger_t::ev_map_address: {
+			ea_t* mapped = va_arg(va, ea_t*);
+			ea_t ea = va_arg(va, ea_t);
+			const regval_t* regs = va_arg(va, const regval_t*);
+			int regnum = va_arg(va, int);
+			*mapped = map_address(ea, regs, regnum);
+			retcode = DRC_OK;
+			break;
+		}
 		default: {
 			debug_printf("Unhandled event %d\n", msgid);
 			break;
@@ -2814,6 +2909,8 @@ debugger_t debugger =
   PROCESSOR_NAME,				// Required processor name
   DBG_FLAG_REMOTE | DBG_FLAG_NOHOST | DBG_FLAG_CAN_CONT_BPT,
   DBG_HAS_GET_PROCESSES | DBG_HAS_ATTACH_PROCESS
+| DBG_HAS_CHECK_BPT
+| DBG_HAS_MAP_ADDRESS
 | DBG_HAS_REQUEST_PAUSE
 | DBG_HAS_SET_EXCEPTION_INFO
 | DBG_HAS_THREAD_SUSPEND
