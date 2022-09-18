@@ -471,9 +471,9 @@ int __stdcall EnumCallBack(HTARGET hTarget)
 		{
 			// Store target parameters.
 			pti->hTarget = hTarget;
-			pti->pszName = strdup(ti.pszName);
-			pti->pszHomeDir = strdup(ti.pszHomeDir);
-			pti->pszFSDir = strdup(ti.pszFSDir);
+			pti->pszName = _strdup(ti.pszName);
+			pti->pszHomeDir = _strdup(ti.pszHomeDir);
+			pti->pszFSDir = _strdup(ti.pszFSDir);
 
 			// Store this target.
 			Targets.push_back(pti.release());
