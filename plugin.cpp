@@ -28,41 +28,41 @@ bool plugin_inited;
 // Initialize debugger plugin
 static plugmod_t* idaapi init(void)
 {
-	if (init_plugin())
-	{
-		dbg = &debugger;
-		plugin_inited = true;
-		return PLUGIN_KEEP;
-	}
-	return PLUGIN_SKIP;
+    if (init_plugin())
+    {
+        dbg = &debugger;
+        plugin_inited = true;
+        return PLUGIN_KEEP;
+    }
+    return PLUGIN_SKIP;
 }
 
 //--------------------------------------------------------------------------
 // Terminate debugger plugin
 static void idaapi term(void)
 {
-	if (plugin_inited)
-	{
-		//term_plugin();
-		plugin_inited = false;
-	}
+    if (plugin_inited)
+    {
+        //term_plugin();
+        plugin_inited = false;
+    }
 }
 
 //--------------------------------------------------------------------------
 // The plugin method - usually is not used for debugger plugins
 static bool idaapi run(size_t /*arg*/)
 {
-	return true;
+    return true;
 }
 
 //--------------------------------------------------------------------------
 // Initialize PPC debugger plugin
 static bool init_plugin(void)
 {
-	if (ph.id != PLFM_PPC)
-		return false;
+    if (ph.id != PLFM_PPC)
+        return false;
 
-	return true;
+    return true;
 }
 
 //--------------------------------------------------------------------------
@@ -70,8 +70,8 @@ char comment[] = "DECI3 debugger plugin by oct0xor.";
 
 char help[] =
         "DECI3 debugger plugin by oct0xor.\n"
-		"\n"
-		"This module lets you debug programs running in Playstation 3.\n";
+        "\n"
+        "This module lets you debug programs running in Playstation 3.\n";
 
 
 //--------------------------------------------------------------------------
@@ -90,8 +90,8 @@ plugin_t PLUGIN =
   run,							// invoke plugin
 
   comment,						// long comment about the plugin
-								// it could appear in the status line
-								// or as a hint
+                                // it could appear in the status line
+                                // or as a hint
 
   help,							// multiline help about the plugin
 
