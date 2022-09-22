@@ -35,11 +35,13 @@ It uses ProDG’s TMAPI for communication over deci3 protocol with ps3. Its pret
 1. Edit the system environment variables and make a 'New..' 
 	- Variable Name: IDADIR
 	- Variable Value: C:\Program Files\IDA 7.5
-2. TODO...
-3. TODO...
+2. Edit the system environment variables and make a 'New..' 
+	- Variable Name: IDASDK
+	- Variable Value: C:\Program Files\IDA 7.5\idasdk75
+3. Build using Visual Studio 2022
 
 ## Installation
-- Copy deci3dbg-x64-Release.dll to plugins folder inside your Ida Pro installation.
+- Copy deci3dbg-x64-Release-ida32.dll and deci3dbg-x64-Release-ida64.dll to plugins folder inside your Ida Pro installation.
 
 ## How to use
 1. Load PPC binary in Ida Pro
